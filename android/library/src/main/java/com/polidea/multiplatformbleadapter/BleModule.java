@@ -25,6 +25,7 @@ import com.polidea.multiplatformbleadapter.errors.BleErrorUtils;
 import com.polidea.multiplatformbleadapter.errors.ErrorConverter;
 import com.polidea.multiplatformbleadapter.exceptions.CannotMonitorCharacteristicException;
 import com.polidea.multiplatformbleadapter.utils.Base64Converter;
+import com.polidea.multiplatformbleadapter.utils.ByteUtils;
 import com.polidea.multiplatformbleadapter.utils.Constants;
 import com.polidea.multiplatformbleadapter.utils.DisposableMap;
 import com.polidea.multiplatformbleadapter.utils.IdGenerator;
@@ -35,20 +36,27 @@ import com.polidea.multiplatformbleadapter.utils.ServiceFactory;
 import com.polidea.multiplatformbleadapter.utils.UUIDConverter;
 import com.polidea.multiplatformbleadapter.utils.mapper.RxBleDeviceToDeviceMapper;
 import com.polidea.multiplatformbleadapter.utils.mapper.RxScanResultToScanResultMapper;
+import com.polidea.rxandroidble2.LogConstants;
+import com.polidea.rxandroidble2.LogOptions;
 import com.polidea.rxandroidble2.NotificationSetupMode;
 import com.polidea.rxandroidble2.RxBleAdapterStateObservable;
 import com.polidea.rxandroidble2.RxBleClient;
 import com.polidea.rxandroidble2.RxBleConnection;
 import com.polidea.rxandroidble2.RxBleDevice;
+import com.polidea.rxandroidble2.RxBlePhy;
+import com.polidea.rxandroidble2.RxBlePhyOption;
 import com.polidea.rxandroidble2.internal.RxBleLog;
 import com.polidea.rxandroidble2.scan.ScanFilter;
 import com.polidea.rxandroidble2.scan.ScanSettings;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import io.reactivex.BackpressureStrategy;
 import io.reactivex.Observable;
@@ -109,6 +117,17 @@ public class BleModule implements BleAdapter {
     public void createClient(String restoreStateIdentifier,
                              OnEventCallback<String> onAdapterStateChangeCallback,
                              OnEventCallback<Integer> onStateRestored) {
+        RxBleLog.i("BLE", ">>> 创建 Client");
+
+        // 日志
+        RxBleClient.updateLogOptions(new LogOptions.Builder()
+                .setLogLevel(LogConstants.VERBOSE)
+                .setMacAddressLogSetting(LogConstants.MAC_ADDRESS_FULL)
+                .setUuidsLogSetting(LogConstants.UUIDS_FULL)
+                .setShouldLogAttributeValues(true)
+                .build()
+        );
+
         rxBleClient = RxBleClient.create(context);
         adapterStateChangesSubscription = monitorAdapterStateChanges(context, onAdapterStateChangeCallback);
 
@@ -672,6 +691,7 @@ public class BleModule implements BleAdapter {
                                                String characteristicUUID,
                                                String transactionId,
                                                OnEventCallback<Characteristic> onEventCallback,
+                                               OnSuccessCallback<Characteristic> onSuccessCallback,
                                                OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(
                 deviceIdentifier, serviceUUID, characteristicUUID, onErrorCallback);
@@ -679,7 +699,7 @@ public class BleModule implements BleAdapter {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
     }
 
     @Override
@@ -687,6 +707,7 @@ public class BleModule implements BleAdapter {
                                                 String characteristicUUID,
                                                 String transactionId,
                                                 OnEventCallback<Characteristic> onEventCallback,
+                                                OnSuccessCallback<Characteristic> onSuccessCallback,
                                                 OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(
                 serviceIdentifier, characteristicUUID, onErrorCallback);
@@ -694,19 +715,20 @@ public class BleModule implements BleAdapter {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
     }
 
     @Override
     public void monitorCharacteristic(int characteristicIdentifier, String transactionId,
                                       OnEventCallback<Characteristic> onEventCallback,
+                                      OnSuccessCallback<Characteristic> onSuccessCallback,
                                       OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(characteristicIdentifier, onErrorCallback);
         if (characteristic == null) {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
     }
 
     @Override
@@ -1253,6 +1275,7 @@ public class BleModule implements BleAdapter {
 
         final Disposable subscription = connect
                 .subscribe(rxBleConnection -> {
+                    RxBleLog.d("fs", "safeConnectToDevice: subscribe");
                     Device localDevice = rxBleDeviceToDeviceMapper.map(device, rxBleConnection);
                     onConnectionStateChangedCallback.onEvent(ConnectionState.CONNECTED);
                     cleanServicesAndCharacteristicsForDevice(localDevice);
@@ -1260,6 +1283,11 @@ public class BleModule implements BleAdapter {
                     activeConnections.put(device.getMacAddress(), rxBleConnection);
                     safeExecutor.success(localDevice);
                 }, error -> {
+                    RxBleLog.d("fs", "safeConnectToDevice: error");
+                    // 直接在错误回调中处理 TimeoutException
+                    if (error instanceof TimeoutException) {
+                        error = new BleError(BleErrorCode.OperationTimedOut, "Connection timed out after " + timeout + " milliseconds", null);
+                    }
                     BleError bleError = errorConverter.toError(error);
                     safeExecutor.error(bleError);
                     onDeviceDisconnected(device);
@@ -1417,6 +1445,7 @@ public class BleModule implements BleAdapter {
     private void safeMonitorCharacteristicForDevice(final Characteristic characteristic,
                                                     final String transactionId,
                                                     final OnEventCallback<Characteristic> onEventCallback,
+                                                    final OnSuccessCallback<Characteristic> onSuccessCallback,
                                                     final OnErrorCallback onErrorCallback) {
         final RxBleConnection connection = getConnectionOrEmitError(characteristic.getDeviceId(), onErrorCallback);
         if (connection == null) {
@@ -1440,19 +1469,32 @@ public class BleModule implements BleAdapter {
 
                     return Observable.error(new CannotMonitorCharacteristicException(characteristic));
                 })
+                .doOnNext(observable -> {
+                    RxBleLog.i("FS", "safeMonitorCharacteristicForDevice - doOnNext - notify 成功");
+                    onSuccessCallback.onSuccess(new Characteristic(characteristic));
+                })
                 .flatMap(observable -> observable)
+                .doOnNext(bytes -> {
+                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - doOnNext - " + ByteUtils.bytesToHex(bytes));
+                })
                 .toFlowable(BackpressureStrategy.BUFFER)
                 .observeOn(Schedulers.computation())
                 .doOnCancel(() -> {
+                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - doOnCancel");
                     safeExecutor.error(BleErrorUtils.cancelled());
                     pendingTransactions.removeSubscription(transactionId);
                 })
-                .doOnComplete(() -> pendingTransactions.removeSubscription(transactionId))
+                .doOnComplete(() -> {
+                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - doOnComplete");
+                    pendingTransactions.removeSubscription(transactionId);
+                })
                 .subscribe(bytes -> {
+                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - subscribe");
                     characteristic.logValue("Notification from", bytes);
                     characteristic.setValue(bytes);
                     onEventCallback.onEvent(new Characteristic(characteristic));
                 }, throwable -> {
+                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - throwable");
                     safeExecutor.error(errorConverter.toError(throwable));
                     pendingTransactions.removeSubscription(transactionId);
                 });

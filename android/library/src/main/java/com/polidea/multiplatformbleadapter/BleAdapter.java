@@ -163,6 +163,7 @@ public interface BleAdapter {
             String characteristicUUID,
             String transactionId,
             OnEventCallback<Characteristic> onEventCallback,
+            OnSuccessCallback<Characteristic> onSuccessCallback,
             OnErrorCallback onErrorCallback);
 
     void monitorCharacteristicForService(
@@ -170,12 +171,14 @@ public interface BleAdapter {
             String characteristicUUID,
             String transactionId,
             OnEventCallback<Characteristic> onEventCallback,
+            OnSuccessCallback<Characteristic> onSuccessCallback,
             OnErrorCallback onErrorCallback);
 
     void monitorCharacteristic(
             int characteristicIdentifier,
             String transactionId,
             OnEventCallback<Characteristic> onEventCallback,
+            OnSuccessCallback<Characteristic> onSuccessCallback,
             OnErrorCallback onErrorCallback);
 
     void readDescriptorForDevice(

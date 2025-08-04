@@ -22,11 +22,11 @@ public class BleError extends Throwable {
     public String getMessage() {
         return "Error code: " + errorCode +
                 ", android code: " + androidCode +
-                ", reason" + reason +
-                ", deviceId" + deviceID +
-                ", serviceUuid" + serviceUUID +
-                ", characteristicUuid" + characteristicUUID +
-                ", descriptorUuid" + descriptorUUID +
-                ", internalMessage" + internalMessage;
+                ", reason " + reason +
+                ", deviceId " + deviceID +
+                ", serviceUuid " + serviceUUID +
+                ", characteristicUuid " + characteristicUUID +
+                ", descriptorUuid " + descriptorUUID +
+                ", internalMessage " + internalMessage;
     }
 }
