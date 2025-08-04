@@ -36,6 +36,7 @@ import com.polidea.multiplatformbleadapter.utils.ServiceFactory;
 import com.polidea.multiplatformbleadapter.utils.UUIDConverter;
 import com.polidea.multiplatformbleadapter.utils.mapper.RxBleDeviceToDeviceMapper;
 import com.polidea.multiplatformbleadapter.utils.mapper.RxScanResultToScanResultMapper;
+import com.polidea.rxandroidble2.BuildConfig;
 import com.polidea.rxandroidble2.LogConstants;
 import com.polidea.rxandroidble2.LogOptions;
 import com.polidea.rxandroidble2.NotificationSetupMode;
@@ -118,15 +119,6 @@ public class BleModule implements BleAdapter {
                              OnEventCallback<String> onAdapterStateChangeCallback,
                              OnEventCallback<Integer> onStateRestored) {
         RxBleLog.i("BLE", ">>> 创建 Client");
-
-        // 日志
-        RxBleClient.updateLogOptions(new LogOptions.Builder()
-                .setLogLevel(LogConstants.VERBOSE)
-                .setMacAddressLogSetting(LogConstants.MAC_ADDRESS_FULL)
-                .setUuidsLogSetting(LogConstants.UUIDS_FULL)
-                .setShouldLogAttributeValues(true)
-                .build()
-        );
 
         rxBleClient = RxBleClient.create(context);
         adapterStateChangesSubscription = monitorAdapterStateChanges(context, onAdapterStateChangeCallback);
