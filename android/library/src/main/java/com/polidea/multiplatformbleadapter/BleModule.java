@@ -43,8 +43,6 @@ import com.polidea.rxandroidble2.RxBleAdapterStateObservable;
 import com.polidea.rxandroidble2.RxBleClient;
 import com.polidea.rxandroidble2.RxBleConnection;
 import com.polidea.rxandroidble2.RxBleDevice;
-import com.polidea.rxandroidble2.RxBlePhy;
-import com.polidea.rxandroidble2.RxBlePhyOption;
 import com.polidea.rxandroidble2.internal.RxBleLog;
 import com.polidea.rxandroidble2.scan.ScanFilter;
 import com.polidea.rxandroidble2.scan.ScanSettings;
@@ -57,6 +55,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.reactivex.BackpressureStrategy;
 import io.reactivex.Observable;
@@ -691,7 +690,6 @@ public class BleModule implements BleAdapter {
                                                String characteristicUUID,
                                                String transactionId,
                                                OnEventCallback<Characteristic> onEventCallback,
-                                               OnSuccessCallback<Characteristic> onSuccessCallback,
                                                OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(
                 deviceIdentifier, serviceUUID, characteristicUUID, onErrorCallback);
@@ -699,7 +697,7 @@ public class BleModule implements BleAdapter {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
     }
 
     @Override
@@ -707,7 +705,6 @@ public class BleModule implements BleAdapter {
                                                 String characteristicUUID,
                                                 String transactionId,
                                                 OnEventCallback<Characteristic> onEventCallback,
-                                                OnSuccessCallback<Characteristic> onSuccessCallback,
                                                 OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(
                 serviceIdentifier, characteristicUUID, onErrorCallback);
@@ -715,20 +712,19 @@ public class BleModule implements BleAdapter {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
     }
 
     @Override
     public void monitorCharacteristic(int characteristicIdentifier, String transactionId,
                                       OnEventCallback<Characteristic> onEventCallback,
-                                      OnSuccessCallback<Characteristic> onSuccessCallback,
                                       OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(characteristicIdentifier, onErrorCallback);
         if (characteristic == null) {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
     }
 
     @Override
@@ -1237,6 +1233,7 @@ public class BleModule implements BleAdapter {
                                      final OnErrorCallback onErrorCallback) {
 
         final SafeExecutor<Device> safeExecutor = new SafeExecutor<>(onSuccessCallback, onErrorCallback);
+        final AtomicBoolean connectionEstablished = new AtomicBoolean(false);
 
         Observable<RxBleConnection> connect = device
                 .establishConnection(autoConnect)
@@ -1245,6 +1242,18 @@ public class BleModule implements BleAdapter {
                     safeExecutor.error(BleErrorUtils.cancelled());
                     onDeviceDisconnected(device);
                     onConnectionStateChangedCallback.onEvent(ConnectionState.DISCONNECTED);
+                })
+                .doOnError(error -> {
+                    BleError bleError = errorConverter.toError(error);
+                    // 区分连接建立前后的错误处理
+                    if (connectionEstablished.get()) {
+                        onErrorCallback.onError(bleError);  // 连接建立后的错误直接回调
+                    } else {
+                        safeExecutor.error(bleError);  // 连接建立前的错误通过 SafeExecutor
+                    }
+                    pendingTransactions.removeAllSubscriptions();
+                    onDeviceDisconnected(device);
+                    onConnectionStateChangedCallback.onEvent(ConnectionState.DISCONNECTED); // 通知状态变更
                 });
 
         if (refreshGattMoment == RefreshGattMoment.ON_CONNECTED) {
@@ -1276,6 +1285,7 @@ public class BleModule implements BleAdapter {
         final Disposable subscription = connect
                 .subscribe(rxBleConnection -> {
                     RxBleLog.d("fs", "safeConnectToDevice: subscribe");
+                    connectionEstablished.set(true);
                     Device localDevice = rxBleDeviceToDeviceMapper.map(device, rxBleConnection);
                     onConnectionStateChangedCallback.onEvent(ConnectionState.CONNECTED);
                     cleanServicesAndCharacteristicsForDevice(localDevice);
@@ -1289,7 +1299,12 @@ public class BleModule implements BleAdapter {
                         error = new BleError(BleErrorCode.OperationTimedOut, "Connection timed out after " + timeout + " milliseconds", null);
                     }
                     BleError bleError = errorConverter.toError(error);
-                    safeExecutor.error(bleError);
+                    // 区分连接建立前后的错误处理
+                    if (connectionEstablished.get()) {
+                        onErrorCallback.onError(bleError);  // 连接建立后的错误直接回调
+                    } else {
+                        safeExecutor.error(bleError);  // 连接建立前的错误通过 SafeExecutor
+                    }
                     onDeviceDisconnected(device);
                 });
 
@@ -1445,7 +1460,6 @@ public class BleModule implements BleAdapter {
     private void safeMonitorCharacteristicForDevice(final Characteristic characteristic,
                                                     final String transactionId,
                                                     final OnEventCallback<Characteristic> onEventCallback,
-                                                    final OnSuccessCallback<Characteristic> onSuccessCallback,
                                                     final OnErrorCallback onErrorCallback) {
         final RxBleConnection connection = getConnectionOrEmitError(characteristic.getDeviceId(), onErrorCallback);
         if (connection == null) {
@@ -1468,10 +1482,6 @@ public class BleModule implements BleAdapter {
                     }
 
                     return Observable.error(new CannotMonitorCharacteristicException(characteristic));
-                })
-                .doOnNext(observable -> {
-                    RxBleLog.i("FS", "safeMonitorCharacteristicForDevice - doOnNext - notify 成功");
-                    onSuccessCallback.onSuccess(new Characteristic(characteristic));
                 })
                 .flatMap(observable -> observable)
                 .doOnNext(bytes -> {
