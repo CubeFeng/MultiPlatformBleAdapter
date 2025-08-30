@@ -23,6 +23,7 @@ import com.polidea.multiplatformbleadapter.ConnectionOptions
 import com.polidea.multiplatformbleadapter.ScanResult
 import com.polidea.multiplatformbleadapter.utils.Base64Converter
 import com.polidea.multiplatformbleadapter.utils.ByteUtils
+import com.polidea.multiplatformbleadapter.utils.Constants
 import com.withintent.samplebleapp.ui.theme.AndroidTheme
 import okio.Buffer
 import pub.devrel.easypermissions.EasyPermissions
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
         setContent {
             Log.i(TAG, ">>> onCreate - setContent")
             bleAdapter = BleAdapterFactory.getNewAdapter(this)
+            bleAdapter.logLevel = Constants.BluetoothLogLevel.VERBOSE
             val bleState = remember { mutableStateOf(bleAdapter.currentState) }
 
             bleAdapter.createClient("SampleBleApp",
@@ -141,7 +143,7 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
     private fun requestBluetoothPermissions() {
         val perms = arrayOf(
                 android.Manifest.permission.BLUETOOTH_SCAN,
-                android.Manifest.permission.BLUETOOTH_CONNECT
+                android.Manifest.permission.BLUETOOTH_CONNECT,
         )
         if (EasyPermissions.hasPermissions(this, *perms)) {
             // 权限已授予，开始扫描
@@ -167,8 +169,8 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
                 scanCallback@ {
 //                    devices.value = devices.value.plus(it.deviceId to it)
                     Log.i(TAG, "OnScanResultCallback $it")
-                    if (it.deviceName?.startsWith("HyperMateMax E0CB") != true) {
-//                    if (it.deviceName?.startsWith("Nordic_UART") != true) {
+//                    if (it.deviceName?.startsWith("HyperMateMax E0CB") != true) {
+                    if (it.deviceName?.startsWith("Nordic_UART") != true) {
                         return@scanCallback
                     }
                     Log.i(TAG, "找到设备")
@@ -221,30 +223,6 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
                 serviceId,
                 characteristicId,
                 "monitorCharacteristic",
-                {
-                    Log.i(TAG, "notify - OnSuccessCallback ${ByteUtils.bytesToHex(it.value)}")
-                    CmdUtils.parseCmd(it.value);
-
-//                    val value = it.value
-//                    if (CmdUtils.isHeaderChunk(value)) {
-//                        // ?##<msg type><data len><data>
-//                        msgDataLen = CmdUtils.decode32BE(value, 5);
-//                        // ?##<msg type><data len>
-//                        msgDataLen += 1 + 2 + 2 + 4
-//                        packetSize = Math.min(msgDataLen, 64)
-//                        buffer.write(value.copyOfRange(0, packetSize.toInt()))
-//                    } else {
-//                        packetSize = Math.min(msgDataLen, 63)
-//                        buffer.write(value.copyOfRange(0, packetSize.toInt()))
-//                    }
-//                    msgDataLen -= packetSize
-//                    Log.d(TAG, "notifyCharacteristic: $msgDataLen")
-//
-//                    if (msgDataLen <= 0) {
-//                        val byteArray = buffer.readByteArray()
-//                        Log.d(TAG, ">>> 完整的指令数据 ${ByteUtils.bytesToHex(byteArray)}")
-//                    }
-                },
                 {
                     Log.i(TAG, "notify - OnEventCallback $it")
                 },
