@@ -14,6 +14,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.ParcelUuid;
+import android.util.Log;
 import android.util.SparseArray;
 
 import androidx.annotation.NonNull;
@@ -36,8 +37,6 @@ import com.polidea.multiplatformbleadapter.utils.ServiceFactory;
 import com.polidea.multiplatformbleadapter.utils.UUIDConverter;
 import com.polidea.multiplatformbleadapter.utils.mapper.RxBleDeviceToDeviceMapper;
 import com.polidea.multiplatformbleadapter.utils.mapper.RxScanResultToScanResultMapper;
-import com.polidea.rxandroidble2.LogConstants;
-import com.polidea.rxandroidble2.LogOptions;
 import com.polidea.rxandroidble2.NotificationSetupMode;
 import com.polidea.rxandroidble2.RxBleAdapterStateObservable;
 import com.polidea.rxandroidble2.RxBleClient;
@@ -48,9 +47,7 @@ import com.polidea.rxandroidble2.scan.ScanFilter;
 import com.polidea.rxandroidble2.scan.ScanSettings;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -60,7 +57,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import io.reactivex.BackpressureStrategy;
 import io.reactivex.Observable;
 import io.reactivex.disposables.Disposable;
+import io.reactivex.exceptions.UndeliverableException;
 import io.reactivex.functions.Action;
+import io.reactivex.functions.BiFunction;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.schedulers.Schedulers;
 
 public class BleModule implements BleAdapter {
@@ -118,15 +118,6 @@ public class BleModule implements BleAdapter {
                              OnEventCallback<Integer> onStateRestored) {
         RxBleLog.i("BLE", ">>> 创建 Client");
 
-        // 日志
-        RxBleClient.updateLogOptions(new LogOptions.Builder()
-                .setLogLevel(LogConstants.VERBOSE)
-                .setMacAddressLogSetting(LogConstants.MAC_ADDRESS_FULL)
-                .setUuidsLogSetting(LogConstants.UUIDS_FULL)
-                .setShouldLogAttributeValues(true)
-                .build()
-        );
-
         rxBleClient = RxBleClient.create(context);
         adapterStateChangesSubscription = monitorAdapterStateChanges(context, onAdapterStateChangeCallback);
 
@@ -134,6 +125,16 @@ public class BleModule implements BleAdapter {
         if (restoreStateIdentifier != null) {
             onStateRestored.onEvent(null);
         }
+
+        // 全局异常捕获，防止崩溃
+        // https://github.com/dotintent/MultiPlatformBleAdapter/pull/67
+        // https://github.com/ReactiveX/RxJava/wiki/What's-different-in-2.0#error-handling
+        RxJavaPlugins.setErrorHandler(e -> {
+            if (e instanceof UndeliverableException) {
+                Log.e("BleModule", "catch UndeliverableException");
+                e.printStackTrace();
+            }
+        });
     }
 
     @Override
@@ -1438,8 +1439,29 @@ public class BleModule implements BleAdapter {
 
         final SafeExecutor<Characteristic> safeExecutor = new SafeExecutor<>(onSuccessCallback, onErrorCallback);
 
+        // 最大重试次数
+        final int MAX_RETRIES = 3;
+        // 重试延迟时间(毫秒)
+        final long RETRY_DELAY = 10;
+
         final Disposable subscription = connection
                 .writeCharacteristic(characteristic.gattCharacteristic, value)
+                .toObservable() // 转为Observable
+                .doOnSubscribe(disposable -> Log.d("BLE", "Write started, transactionId=" + transactionId))
+                .doOnError(error -> Log.w("BLE", "Write error: " + error + ", transactionId=" + transactionId))
+                .doOnNext(bytes -> Log.d("BLE", "Write success, transactionId=" + transactionId))
+                .retryWhen(errors -> errors
+                        .zipWith(Observable.range(1, MAX_RETRIES),
+                                new BiFunction<Throwable, Integer, Integer>() {
+                                    @Override
+                                    public Integer apply(Throwable error, Integer retryCount) throws Exception {
+                                        Log.w("BLE", "Write retry #" + retryCount + " for transactionId=" + transactionId);
+                                        return retryCount;
+                                    }
+                                }
+                        )
+                        .flatMap(retryCount -> Observable.timer(10, TimeUnit.MILLISECONDS))
+                )
                 .doOnDispose(() -> {
                     safeExecutor.error(BleErrorUtils.cancelled());
                     pendingTransactions.removeSubscription(transactionId);
