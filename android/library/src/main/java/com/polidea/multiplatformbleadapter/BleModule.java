@@ -63,7 +63,6 @@ import io.reactivex.Observable;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.exceptions.UndeliverableException;
 import io.reactivex.functions.Action;
-import io.reactivex.functions.BiFunction;
 import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.schedulers.Schedulers;
 
@@ -120,7 +119,7 @@ public class BleModule implements BleAdapter {
     public void createClient(String restoreStateIdentifier,
                              OnEventCallback<String> onAdapterStateChangeCallback,
                              OnEventCallback<Integer> onStateRestored) {
-        RxBleLog.i("BLE", ">>> 创建 Client");
+        RxBleLog.i("[FS] >>> 创建 Client");
 
         rxBleClient = RxBleClient.create(context);
         adapterStateChangesSubscription = monitorAdapterStateChanges(context, onAdapterStateChangeCallback);
@@ -1302,7 +1301,7 @@ public class BleModule implements BleAdapter {
 
         final Disposable subscription = connect
                 .subscribe(rxBleConnection -> {
-                    RxBleLog.d("fs", "safeConnectToDevice: subscribe");
+                    RxBleLog.d("[FS] safeConnectToDevice - subscribe");
                     connectionEstablished.set(true);
                     Device localDevice = rxBleDeviceToDeviceMapper.map(device, rxBleConnection);
                     onConnectionStateChangedCallback.onEvent(ConnectionState.CONNECTED);
@@ -1311,7 +1310,7 @@ public class BleModule implements BleAdapter {
                     activeConnections.put(device.getMacAddress(), rxBleConnection);
                     safeExecutor.success(localDevice);
                 }, error -> {
-                    RxBleLog.d("fs", "safeConnectToDevice: error");
+                    RxBleLog.e("[FS] safeConnectToDevice - error");
                     // 直接在错误回调中处理 TimeoutException
                     if (error instanceof TimeoutException) {
                         error = new BleError(BleErrorCode.OperationTimedOut, "Connection timed out after " + timeout + " milliseconds", null);
@@ -1464,21 +1463,21 @@ public class BleModule implements BleAdapter {
         final Disposable subscription = connection
                 .writeCharacteristic(characteristic.gattCharacteristic, value)
                 .toObservable() // 转为Observable
-                .doOnSubscribe(disposable -> Log.d("BLE", "Write started, transactionId=" + transactionId))
-                .doOnError(error -> Log.w("BLE", "Write error: " + error + ", transactionId=" + transactionId))
-                .doOnNext(bytes -> Log.d("BLE", "Write success, transactionId=" + transactionId))
-                .retryWhen(errors -> errors
-                        .zipWith(Observable.range(1, MAX_RETRIES),
-                                new BiFunction<Throwable, Integer, Integer>() {
-                                    @Override
-                                    public Integer apply(Throwable error, Integer retryCount) throws Exception {
-                                        Log.w("BLE", "Write retry #" + retryCount + " for transactionId=" + transactionId);
-                                        return retryCount;
-                                    }
-                                }
-                        )
-                        .flatMap(retryCount -> Observable.timer(10, TimeUnit.MILLISECONDS))
-                )
+//                .doOnSubscribe(disposable -> Log.d("BLE", "Write started, transactionId=" + transactionId))
+                .doOnError(error -> Log.e("BLE", "Write error: " + error + ", transactionId=" + transactionId))
+//                .doOnNext(bytes -> Log.d("BLE", "Write success, transactionId=" + transactionId))
+//                .retryWhen(errors -> errors
+//                        .zipWith(Observable.range(1, MAX_RETRIES),
+//                                new BiFunction<Throwable, Integer, Integer>() {
+//                                    @Override
+//                                    public Integer apply(Throwable error, Integer retryCount) throws Exception {
+//                                        Log.w("BLE", "Write retry #" + retryCount + " for transactionId=" + transactionId);
+//                                        return retryCount;
+//                                    }
+//                                }
+//                        )
+//                        .flatMap(retryCount -> Observable.timer(10, TimeUnit.MILLISECONDS))
+//                )
                 .doOnDispose(() -> {
                     safeExecutor.error(BleErrorUtils.cancelled());
                     pendingTransactions.removeSubscription(transactionId);
@@ -1524,26 +1523,26 @@ public class BleModule implements BleAdapter {
                 })
                 .flatMap(observable -> observable)
                 .doOnNext(bytes -> {
-                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - doOnNext - " + ByteUtils.bytesToHex(bytes));
+                    RxBleLog.d("[FS] safeMonitorCharacteristicForDevice - doOnNext - " + ByteUtils.bytesToHex(bytes));
                 })
                 .toFlowable(BackpressureStrategy.BUFFER)
                 .observeOn(Schedulers.computation())
                 .doOnCancel(() -> {
-                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - doOnCancel");
+                    RxBleLog.d("[FS] safeMonitorCharacteristicForDevice - doOnCancel");
                     safeExecutor.error(BleErrorUtils.cancelled());
                     pendingTransactions.removeSubscription(transactionId);
                 })
                 .doOnComplete(() -> {
-                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - doOnComplete");
+                    RxBleLog.d("[FS] safeMonitorCharacteristicForDevice - doOnComplete");
                     pendingTransactions.removeSubscription(transactionId);
                 })
                 .subscribe(bytes -> {
-                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - subscribe");
+                    RxBleLog.d("[FS] safeMonitorCharacteristicForDevice - subscribe");
                     characteristic.logValue("Notification from", bytes);
                     characteristic.setValue(bytes);
                     onEventCallback.onEvent(new Characteristic(characteristic));
                 }, throwable -> {
-                    RxBleLog.d("FS", "safeMonitorCharacteristicForDevice - throwable");
+                    RxBleLog.d("[FS] safeMonitorCharacteristicForDevice - throwable");
                     safeExecutor.error(errorConverter.toError(throwable));
                     pendingTransactions.removeSubscription(transactionId);
                 });
