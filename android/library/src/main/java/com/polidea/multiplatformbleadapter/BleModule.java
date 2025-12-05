@@ -1282,17 +1282,17 @@ public class BleModule implements BleAdapter {
         }
 
         // 仅在API 26及以上支持 PHY 设置
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            connect = connect.flatMap(rxBleConnection ->
-                    rxBleConnection.setPreferredPhy(
-                            new LinkedHashSet<>(Arrays.asList(RxBlePhy.PHY_2M, RxBlePhy.PHY_2M)),
-                            new LinkedHashSet<>(Arrays.asList(RxBlePhy.PHY_2M, RxBlePhy.PHY_2M)),
-                            RxBlePhyOption.PHY_OPTION_NO_PREFERRED
-                    )
-                    .map(phySetSuccess -> rxBleConnection)
-                    .toObservable()
-            );
-        }
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+//            connect = connect.flatMap(rxBleConnection ->
+//                    rxBleConnection.setPreferredPhy(
+//                            new LinkedHashSet<>(Arrays.asList(RxBlePhy.PHY_2M, RxBlePhy.PHY_2M)),
+//                            new LinkedHashSet<>(Arrays.asList(RxBlePhy.PHY_2M, RxBlePhy.PHY_2M)),
+//                            RxBlePhyOption.PHY_OPTION_NO_PREFERRED
+//                    )
+//                    .map(phySetSuccess -> rxBleConnection)
+//                    .toObservable()
+//            );
+//        }
 
         if (timeout != null) {
             connect = connect.timeout(timeout, TimeUnit.MILLISECONDS);
