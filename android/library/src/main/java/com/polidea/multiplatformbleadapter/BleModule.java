@@ -134,8 +134,7 @@ public class BleModule implements BleAdapter {
         // https://github.com/ReactiveX/RxJava/wiki/What's-different-in-2.0#error-handling
         RxJavaPlugins.setErrorHandler(e -> {
             if (e instanceof UndeliverableException) {
-                Log.e("BleModule", "catch UndeliverableException");
-                e.printStackTrace();
+                Log.e("BleModule", "catch UndeliverableException", e);
             }
         });
     }
@@ -1310,7 +1309,7 @@ public class BleModule implements BleAdapter {
                     activeConnections.put(device.getMacAddress(), rxBleConnection);
                     safeExecutor.success(localDevice);
                 }, error -> {
-                    RxBleLog.e("[FS] safeConnectToDevice - error");
+                    RxBleLog.e("[FS] safeConnectToDevice - error", error);
                     // 直接在错误回调中处理 TimeoutException
                     if (error instanceof TimeoutException) {
                         error = new BleError(BleErrorCode.OperationTimedOut, "Connection timed out after " + timeout + " milliseconds", null);
@@ -1463,15 +1462,15 @@ public class BleModule implements BleAdapter {
         final Disposable subscription = connection
                 .writeCharacteristic(characteristic.gattCharacteristic, value)
                 .toObservable() // 转为Observable
-//                .doOnSubscribe(disposable -> Log.d("BLE", "Write started, transactionId=" + transactionId))
-                .doOnError(error -> Log.e("BLE", "Write error: " + error + ", transactionId=" + transactionId))
-//                .doOnNext(bytes -> Log.d("BLE", "Write success, transactionId=" + transactionId))
+//                .doOnSubscribe(disposable -> RxBleLog.d("Write started, transactionId=" + transactionId))
+                .doOnError(error -> RxBleLog.e("Write error: " + error + ", transactionId=" + transactionId))
+//                .doOnNext(bytes -> RxBleLog.d("Write success, transactionId=" + transactionId))
 //                .retryWhen(errors -> errors
 //                        .zipWith(Observable.range(1, MAX_RETRIES),
 //                                new BiFunction<Throwable, Integer, Integer>() {
 //                                    @Override
 //                                    public Integer apply(Throwable error, Integer retryCount) throws Exception {
-//                                        Log.w("BLE", "Write retry #" + retryCount + " for transactionId=" + transactionId);
+//                                        RxBleLog.w("Write retry #" + retryCount + " for transactionId=" + transactionId);
 //                                        return retryCount;
 //                                    }
 //                                }
