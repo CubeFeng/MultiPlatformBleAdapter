@@ -4,15 +4,15 @@ import android.bluetooth.BluetoothGatt;
 
 import androidx.annotation.NonNull;
 
-import com.polidea.rxandroidble2.RxBleCustomOperation;
-import com.polidea.rxandroidble2.internal.RxBleLog;
-import com.polidea.rxandroidble2.internal.connection.RxBleGattCallback;
+import com.polidea.rxandroidble3.RxBleCustomOperation;
+import com.polidea.rxandroidble3.internal.RxBleLog;
+import com.polidea.rxandroidble3.internal.connection.RxBleGattCallback;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
 
-import io.reactivex.Observable;
-import io.reactivex.Scheduler;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Scheduler;
 
 public class RefreshGattCustomOperation implements RxBleCustomOperation<Boolean> {
 
