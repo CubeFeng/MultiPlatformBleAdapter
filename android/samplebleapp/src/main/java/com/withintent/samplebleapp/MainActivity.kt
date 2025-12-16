@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
                     }
                     Log.i(TAG, "找到设备")
                     bleAdapter.stopDeviceScan()
-                    val options = ConnectionOptions(false, MTU, null, null, 0)
+                    val options = ConnectionOptions(false, MTU, null, null, 0, true)
                     // 给超时时间会崩溃
 //                    val options = ConnectionOptions(false, ANDROID_PACKET_LENGTH, null, 3000, 0)
                     bleAdapter.connectToDevice(it.deviceId, options,
@@ -225,6 +225,9 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
                 "monitorCharacteristic",
                 {
                     Log.i(TAG, "notify - OnEventCallback $it")
+                },
+                {
+                    Log.i(TAG, "notify - OnSuccessCallback $it")
                 },
                 {
                     Log.i(TAG, "notify - OnErrorCallback $it")

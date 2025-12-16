@@ -422,6 +422,7 @@ public class BleModule implements BleAdapter {
                 connectionOptions.getRefreshGattMoment(),
                 connectionOptions.getTimeoutInMillis(),
                 connectionOptions.getConnectionPriority(),
+                connectionOptions.isPhyEnabled(),
                 onSuccessCallback, onConnectionStateChangedCallback, onErrorCallback);
     }
 
@@ -694,6 +695,7 @@ public class BleModule implements BleAdapter {
                                                String characteristicUUID,
                                                String transactionId,
                                                OnEventCallback<Characteristic> onEventCallback,
+                                               final OnSuccessCallback<Void> onSuccessCallback,
                                                OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(
                 deviceIdentifier, serviceUUID, characteristicUUID, onErrorCallback);
@@ -701,7 +703,7 @@ public class BleModule implements BleAdapter {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
     }
 
     @Override
@@ -709,6 +711,7 @@ public class BleModule implements BleAdapter {
                                                 String characteristicUUID,
                                                 String transactionId,
                                                 OnEventCallback<Characteristic> onEventCallback,
+                                                final OnSuccessCallback<Void> onSuccessCallback,
                                                 OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(
                 serviceIdentifier, characteristicUUID, onErrorCallback);
@@ -716,19 +719,20 @@ public class BleModule implements BleAdapter {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
     }
 
     @Override
     public void monitorCharacteristic(int characteristicIdentifier, String transactionId,
                                       OnEventCallback<Characteristic> onEventCallback,
+                                      final OnSuccessCallback<Void> onSuccessCallback,
                                       OnErrorCallback onErrorCallback) {
         final Characteristic characteristic = getCharacteristicOrEmitError(characteristicIdentifier, onErrorCallback);
         if (characteristic == null) {
             return;
         }
 
-        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onErrorCallback);
+        safeMonitorCharacteristicForDevice(characteristic, transactionId, onEventCallback, onSuccessCallback, onErrorCallback);
     }
 
     @Override
@@ -1232,6 +1236,7 @@ public class BleModule implements BleAdapter {
                                      final RefreshGattMoment refreshGattMoment,
                                      final Long timeout,
                                      final int connectionPriority,
+                                     final boolean phyEnabled,
                                      final OnSuccessCallback<Device> onSuccessCallback,
                                      final OnEventCallback<ConnectionState> onConnectionStateChangedCallback,
                                      final OnErrorCallback onErrorCallback) {
@@ -1281,8 +1286,9 @@ public class BleModule implements BleAdapter {
             );
         }
 
-        // 仅在API 26及以上支持 PHY 设置
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // 需要且支持时才启用 PHY
+        if (phyEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            RxBleLog.d("[FS] safeConnectToDevice - PHY enabled");
             connect = connect.flatMap(rxBleConnection ->
                     rxBleConnection.setPreferredPhy(
                             new LinkedHashSet<>(Arrays.asList(RxBlePhy.PHY_2M, RxBlePhy.PHY_2M)),
@@ -1292,6 +1298,8 @@ public class BleModule implements BleAdapter {
                     .map(phySetSuccess -> rxBleConnection)
                     .toObservable()
             );
+        } else {
+            RxBleLog.d("[FS] safeConnectToDevice - PHY disabled");
         }
 
         if (timeout != null) {
@@ -1463,15 +1471,15 @@ public class BleModule implements BleAdapter {
         final Disposable subscription = connection
                 .writeCharacteristic(characteristic.gattCharacteristic, value)
                 .toObservable() // 转为Observable
-//                .doOnSubscribe(disposable -> Log.d("BLE", "Write started, transactionId=" + transactionId))
+                .doOnSubscribe(disposable -> RxBleLog.d("Write started, transactionId=" + transactionId))
                 .doOnError(error -> Log.e("BLE", "Write error: " + error + ", transactionId=" + transactionId))
-//                .doOnNext(bytes -> Log.d("BLE", "Write success, transactionId=" + transactionId))
+                .doOnNext(bytes -> RxBleLog.d("Write success, transactionId=" + transactionId))
 //                .retryWhen(errors -> errors
 //                        .zipWith(Observable.range(1, MAX_RETRIES),
 //                                new BiFunction<Throwable, Integer, Integer>() {
 //                                    @Override
 //                                    public Integer apply(Throwable error, Integer retryCount) throws Exception {
-//                                        Log.w("BLE", "Write retry #" + retryCount + " for transactionId=" + transactionId);
+//                                        RxBleLog.w("Write retry #" + retryCount + " for transactionId=" + transactionId);
 //                                        return retryCount;
 //                                    }
 //                                }
@@ -1498,6 +1506,7 @@ public class BleModule implements BleAdapter {
     private void safeMonitorCharacteristicForDevice(final Characteristic characteristic,
                                                     final String transactionId,
                                                     final OnEventCallback<Characteristic> onEventCallback,
+                                                    final OnSuccessCallback<Void> onSuccessCallback,
                                                     final OnErrorCallback onErrorCallback) {
         final RxBleConnection connection = getConnectionOrEmitError(characteristic.getDeviceId(), onErrorCallback);
         if (connection == null) {
@@ -1508,8 +1517,9 @@ public class BleModule implements BleAdapter {
 
         final Disposable subscription = Observable.defer(() -> {
                     BluetoothGattDescriptor cccDescriptor = characteristic.getGattDescriptor(Constants.CLIENT_CHARACTERISTIC_CONFIG_UUID);
+                    // 通知模式 QUICK_SETUP 不适用主动发送指令场景
                     NotificationSetupMode setupMode = cccDescriptor != null
-                            ? NotificationSetupMode.QUICK_SETUP
+                            ? NotificationSetupMode.DEFAULT
                             : NotificationSetupMode.COMPAT;
                     if (characteristic.isNotifiable()) {
                         return connection.setupNotification(characteristic.gattCharacteristic, setupMode);
@@ -1520,6 +1530,10 @@ public class BleModule implements BleAdapter {
                     }
 
                     return Observable.error(new CannotMonitorCharacteristicException(characteristic));
+                })
+                .doOnNext(bytes -> {
+                    RxBleLog.d("[FS] safeMonitorCharacteristicForDevice - notify 成功");
+                    onSuccessCallback.onSuccess(null);
                 })
                 .flatMap(observable -> observable)
                 .doOnNext(bytes -> {

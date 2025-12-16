@@ -36,16 +36,20 @@ public class ConnectionOptions {
     @ConnectionPriority
     private final int connectionPriority;
 
+    private final boolean phyEnabled;
+
     public ConnectionOptions(Boolean autoConnect,
                              int requestMTU,
                              RefreshGattMoment refreshGattMoment,
                              @Nullable Long timeoutInMillis,
-                             int connectionPriority) {
+                             int connectionPriority,
+                             boolean phyEnabled) {
         this.autoConnect = autoConnect;
         this.requestMTU = requestMTU;
         this.refreshGattMoment = refreshGattMoment;
         this.timeoutInMillis = timeoutInMillis;
         this.connectionPriority = connectionPriority;
+        this.phyEnabled = phyEnabled;
     }
 
     public Boolean getAutoConnect() {
@@ -68,5 +72,9 @@ public class ConnectionOptions {
     @ConnectionPriority
     public int getConnectionPriority() {
         return connectionPriority;
+    }
+
+    public boolean isPhyEnabled() {
+        return phyEnabled;
     }
 }
