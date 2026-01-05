@@ -59,7 +59,7 @@ android {
 
 dependencies {
     api 'io.reactivex.rxjava3:rxjava:3.1.4'
-    api "com.polidea.rxandroidble3:rxandroidble:1.18.1"
+    api "com.polidea.rxandroidble3:rxandroidble:1.19.1"
 }
 
 tasks.withType(PublishToMavenRepository).configureEach { it.enabled = false }
