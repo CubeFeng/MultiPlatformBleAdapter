@@ -1471,20 +1471,15 @@ public class BleModule implements BleAdapter {
                 .writeCharacteristic(characteristic.gattCharacteristic, value)
                 .toObservable() // 转为Observable
                 .doOnSubscribe(disposable -> RxBleLog.d("Write started, transactionId=" + transactionId))
+                .retryWhen(errors -> errors
+                        .zipWith(Observable.range(1, MAX_RETRIES), (error, retryCount) -> {
+                            RxBleLog.d("Write failed, retry " + retryCount + " times, transactionId=" + transactionId + ", error=" + error.getMessage());
+                            return retryCount;
+                        })
+                        .flatMap(retryCount -> Observable.timer(RETRY_DELAY, TimeUnit.MILLISECONDS))
+                )
                 .doOnError(error -> Log.e("BLE", "Write error: " + error + ", transactionId=" + transactionId))
                 .doOnNext(bytes -> RxBleLog.d("Write success, transactionId=" + transactionId))
-//                .retryWhen(errors -> errors
-//                        .zipWith(Observable.range(1, MAX_RETRIES),
-//                                new BiFunction<Throwable, Integer, Integer>() {
-//                                    @Override
-//                                    public Integer apply(Throwable error, Integer retryCount) throws Exception {
-//                                        RxBleLog.w("Write retry #" + retryCount + " for transactionId=" + transactionId);
-//                                        return retryCount;
-//                                    }
-//                                }
-//                        )
-//                        .flatMap(retryCount -> Observable.timer(10, TimeUnit.MILLISECONDS))
-//                )
                 .doOnDispose(() -> {
                     safeExecutor.error(BleErrorUtils.cancelled());
                     pendingTransactions.removeSubscription(transactionId);
