@@ -1464,7 +1464,7 @@ public class BleModule implements BleAdapter {
 
         // 最大重试次数
         final int MAX_RETRIES = 3;
-        // 重试延迟时间(毫秒)
+        // 重试延迟时间 (毫秒)
         final long BASE_RETRY_DELAY = 100;
         // 延迟倍数
         final long DELAY_MULTIPLIER = 2;
