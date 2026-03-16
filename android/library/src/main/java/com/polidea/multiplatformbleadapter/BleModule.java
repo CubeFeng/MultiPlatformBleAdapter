@@ -1465,7 +1465,9 @@ public class BleModule implements BleAdapter {
         // 最大重试次数
         final int MAX_RETRIES = 3;
         // 重试延迟时间(毫秒)
-        final long RETRY_DELAY = 10;
+        final long BASE_RETRY_DELAY = 100;
+        // 延迟倍数
+        final long DELAY_MULTIPLIER = 2;
 
         final Disposable subscription = connection
                 .writeCharacteristic(characteristic.gattCharacteristic, value)
@@ -1476,7 +1478,13 @@ public class BleModule implements BleAdapter {
                             RxBleLog.d("Write failed, retry " + retryCount + " times, transactionId=" + transactionId + ", error=" + error.getMessage());
                             return retryCount;
                         })
-                        .flatMap(retryCount -> Observable.timer(RETRY_DELAY, TimeUnit.MILLISECONDS))
+                        .flatMap(retryCount -> {
+                            // 延迟每次倍增
+                            long delay = BASE_RETRY_DELAY * (long) Math.pow(DELAY_MULTIPLIER, retryCount - 1);
+                            // 兜底：确保延迟不低于30ms
+                            delay = Math.max(delay, 30);
+                            return Observable.timer(delay, TimeUnit.MILLISECONDS);
+                        })
                 )
                 .doOnError(error -> Log.e("BLE", "Write error: " + error + ", transactionId=" + transactionId))
                 .doOnNext(bytes -> RxBleLog.d("Write success, transactionId=" + transactionId))
